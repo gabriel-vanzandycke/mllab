@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+
+[project]
+name = "mllab"
+version = "0.1.0"
+authors = [
+    {name = "Gabriel Van Zandycke", email = "gabriel.vanzandycke@hotmail.com"},
+]
+description = "Experimentation library for computer vision using pytorch-lightning"
+requires-python = "==3.11.*"
+dependencies = [
+    "dill>=0.3.6",
+    "numpy>=1.22,<2.0",
+    "pandas>=1.4.2",
+    "python-dotenv>=0.21",
+    "pyconfyg>=0.0.3",
+    "mlworkflow>=0.6.0",
+]
+readme = "README.md"
+license = {text = "LGPL"}
+urls.Homepage = "https://github.com/gabriel-vanzandycke/mllab"
+
+[project.optional-dependencies]
+wandb = ["wandb>=0.18.3"]
+pytorch = ["lightning>=2.4.0", "torchvision>=0.19.1"]
+
+[project.scripts]
+run = "mllab:main"
+
+[tool.uv]
+dev-dependencies = ["pytest>=8.3"]
+
+[tool.ruff.lint]
+ignore = ["E731", "E741"]
+unfixable = []
