@@ -3,6 +3,7 @@
 from enum import IntFlag
 import types
 
+import torch
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 import torch.nn as nn
@@ -28,7 +29,7 @@ class PyConfigModule(pl.LightningModule):
         self.validation_step = self.step_factory('val')
         self.testing_step    = self.step_factory('test')
         config = {k:v for k,v in config.items() if not isinstance(v, types.ModuleType)}
-        self.save_hyperparameters(config)
+        self.save_hyperparameters(config) # enables logging config to logger
 
     def __gestate__(self):
         return (self.config, )
@@ -43,9 +44,9 @@ class PyConfigModule(pl.LightningModule):
             batch = self(batch, scope=scope)
             name = cycle_names[dataloader_idx]
             batch_size = batch['input'].shape[0]
-            for metric in self.metrics:
-                if metric in batch:
-                    self.log(f'{name}_{metric}', batch[metric], add_dataloader_idx=False, on_epoch=True, on_step=False, batch_size=batch_size)
+            self.log_dict({
+                f'{name}_{metric}': batch.get(metric) for metric in self.metrics
+            }, add_dataloader_idx=False, on_epoch=True, on_step=False, batch_size=batch_size)
             return batch
         return step_function
 
@@ -55,7 +56,7 @@ class PyConfigModule(pl.LightningModule):
 
     def forward(self, batch, scope):
         for operation in self.operations:
-            if operation.scope & scope:
+            if operation is not None and operation.scope & scope:
                 operation(batch)
         return batch
 
@@ -64,6 +65,15 @@ class PyConfigModule(pl.LightningModule):
 
     def configure_optimizers(self):
         return self.config.optimizer(self.parameters(), **self.config.optimizer_kwargs)
+
+
+class MyDataLoader(DataLoader):
+    def __init__(self, dataset, **kwargs):
+        super().__init__(TorchDataset(dataset), **kwargs)
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    def __iter__(self):
+        for batch in super().__iter__():
+            yield {name: batch[name].to(self.device) for name in batch}
 
 
 class PyConfigDataModule(pl.LightningDataModule):
@@ -78,11 +88,13 @@ class PyConfigDataModule(pl.LightningDataModule):
         config, = state
         self.__init__(config)
 
-    def train_dataloader(self):
-        return DataLoader(TorchDataset(self.config.subsets["train"]["training"]), batch_size=self.config.batch_size, shuffle=True, drop_last=True)
+    def train_dataloader(self, sampler=None, batch_size=None):
+        batch_size = batch_size or self.config.batch_size
+        shuffle = not sampler
+        return MyDataLoader(self.config.subsets["train"]["training"], sampler=sampler, batch_size=batch_size, shuffle=shuffle, drop_last=True)
 
     def val_dataloader(self, sampler=None):
         return {
-            name: DataLoader(TorchDataset(subset), sampler=sampler) for name, subset in self.config.subsets['val'].items()
+            name: MyDataLoader(subset, sampler=sampler) for name, subset in self.config.subsets['val'].items()
         }
 

@@ -13,12 +13,25 @@ class Operation(nn.Module, abc.ABC):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     @abc.abstractmethod
     def forward(self, batch):
-        pass
+        raise NotImplementedError
 
+class Lambda(Operation):
+    def __init__(self, l):
+        super().__init__()
+        self.l = l
+    def forward(self, batch):
+        self.l(batch)
 
 class PermuteOperation(Operation):
     def forward(self, batch):
-        batch["input"] = batch["input"].permute(0, 3, 1, 2).contiguous()
+        for name in batch:
+            if len(batch[name].shape) == 4:
+                batch[name] = batch[name].permute(0, 3, 1, 2).contiguous()
+
+
+class MaskLoss(Operation):
+    def forward(self, batch):
+        batch['loss'] = batch['loss'] * ~batch['mask']
 
 
 class NormalizeOperation(Operation):
@@ -47,20 +60,25 @@ class LossOperation(Operation):
     def forward(self, batch):
         batch["loss"] = self.criterion(batch["logits"], batch["target"])
 
+class ReduceLoss(Operation):
+    def forward(self, batch):
+        batch["loss_map"] = batch["loss"]
+        batch["loss"] = batch["loss"].mean()
 
 class TargetToLongOperation(Operation):
     def forward(self, batch):
-        batch["target"] = batch["target"].long()
+        if batch['logits'].shape[1] == 2:
+            batch['target'] = torch.any(batch['target'], dim=1).long()
+        else:
+            batch["target"] = batch["target"].float()
 
 class CropBlockDividable(Operation):
-    def __init__(self, tensor_names, block_size=16):
+    def __init__(self, block_size=16):
         super().__init__()  # Initialize nn.Module
-        self.tensor_names = tensor_names
         self.block_size = block_size
     def forward(self, batch):
         for name in batch:
-            if name in self.tensor_names:
-                H, W = batch[name].shape[-2:]
-                w = W//self.block_size*self.block_size
-                h = H//self.block_size*self.block_size
-                batch[name] = batch[name][..., :h, 0:w]
+            H, W = batch[name].shape[-2:]
+            w = W//self.block_size*self.block_size
+            h = H//self.block_size*self.block_size
+            batch[name] = batch[name][..., 0:h, 0:w]
