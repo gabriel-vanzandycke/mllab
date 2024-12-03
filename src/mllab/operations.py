@@ -8,9 +8,6 @@ from mllab.base import Scope
 
 class Operation(nn.Module, abc.ABC):
     scope = Scope.ALL
-    def __init__(self):
-        super().__init__()  # Initialize nn.Module
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     @abc.abstractmethod
     def forward(self, batch):
         raise NotImplementedError
@@ -22,11 +19,14 @@ class Lambda(Operation):
     def forward(self, batch):
         self.l(batch)
 
-class PermuteOperation(Operation):
+
+class Permute(Operation):
+    def __init__(self, name='input'):
+        super().__init__()
+        self.name = name
     def forward(self, batch):
-        for name in batch:
-            if len(batch[name].shape) == 4:
-                batch[name] = batch[name].permute(0, 3, 1, 2).contiguous()
+        if len(batch[self.name].shape) == 4:
+            batch[self.name] = batch[self.name].permute(0, 3, 1, 2).contiguous()
 
 
 class MaskLoss(Operation):
@@ -34,11 +34,11 @@ class MaskLoss(Operation):
         batch['loss'] = batch['loss'] * ~batch['mask']
 
 
-class NormalizeOperation(Operation):
+class NormalizeInput(Operation):
     def __init__(self, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
         super().__init__()  # Initialize nn.Module
-        self.mean = torch.tensor(mean, device=self.device).view(1, 3, 1, 1)
-        self.std = torch.tensor(std, device=self.device).view(1, 3, 1, 1)
+        self.register_buffer('mean', torch.tensor(mean).view(1, 3, 1, 1))
+        self.register_buffer('std', torch.tensor(std).view(1, 3, 1, 1))
     def forward(self, batch):
         if batch['input'].dtype == torch.uint8:
              batch['input'] = batch['input'].float() / 255.0
@@ -53,7 +53,15 @@ class MobilenetV3Backbone(Operation):
         batch["logits"] = self.model(batch["input"])['out']
 
 
-class LossOperation(Operation):
+class SumLosses(Operation):
+    def __init__(self, loss_weights):
+        super().__init__()  # Initialize nn.Module
+        self.loss_weights = loss_weights
+    def forward(self, batch):
+        batch['loss'] = sum([batch[name]*w for name, w in self.loss_weights.items() if name in batch])
+
+
+class ComputeLoss(Operation):
     def __init__(self, criterion):
         super().__init__()  # Initialize nn.Module
         self.criterion = criterion
@@ -72,13 +80,11 @@ class TargetToLongOperation(Operation):
         else:
             batch["target"] = batch["target"].float()
 
-class CropBlockDividable(Operation):
-    def __init__(self, block_size=16):
+class TorchVisionDataAugmentation(Operation):
+    scope = Scope.TRAIN
+    def __init__(self, *transforms):
         super().__init__()  # Initialize nn.Module
-        self.block_size = block_size
+        self.transforms = transforms
     def forward(self, batch):
-        for name in batch:
-            H, W = batch[name].shape[-2:]
-            w = W//self.block_size*self.block_size
-            h = H//self.block_size*self.block_size
-            batch[name] = batch[name][..., 0:h, 0:w]
+        for transform in self.transforms:
+            batch['input'] = transform(batch['input'])

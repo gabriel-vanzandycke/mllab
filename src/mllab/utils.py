@@ -3,17 +3,17 @@ from torch.utils.data import Dataset
 
 import errno
 import os
-
+from typing import Optional
 
 
 class TorchDataset(Dataset):
-    def __init__(self, dataset):
-        self.dataset = dataset
-        self.keys = list(dataset.keys)
+    def __init__(self, parent):
+        self.parent = parent
+        self.keys = list(parent.keys)
     def __len__(self):
         return len(self.keys)
     def __getitem__(self, i):
-        return self.dataset.query_item(self.keys[i])
+        return self.parent.query_item(self.keys[i])
 
 
 class LazyList:
@@ -93,12 +93,9 @@ class GeneratorBackedCache:
 
 
 
-def find(path, dirs=None, verbose=True, fail=True):
+def find(path, dirs=None, verbose=True) -> str:
     if os.path.isabs(path):
         if not os.path.isfile(path) and not os.path.isdir(path):
-            if not fail:
-                not verbose or print(f"{path} not found")
-                return None
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), path)
         return path
 
@@ -111,8 +108,5 @@ def find(path, dirs=None, verbose=True, fail=True):
             not verbose or print("{} found in {}".format(path, tmp_path))
             return tmp_path
 
-    if not fail:
-        not verbose or print(f"{path} not found (searched in {dirs})")
-        return None
     raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT),
                                 "{} (searched in {})".format(path, dirs))
