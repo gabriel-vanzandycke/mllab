@@ -25,7 +25,7 @@ urls.Homepage = "https://github.com/gabriel-vanzandycke/mllab"
 
 [project.optional-dependencies]
 wandb = ["wandb>=0.18.3"]
-pytorch = ["lightning>=2.4.0", "torchvision>=0.19.1"]
+pytorch = ["lightning>=2.4.0", "torchvision>=0.19.1", "torch_tb_profiler>=0.4.3"]
 
 [project.scripts]
 run = "mllab:main"
