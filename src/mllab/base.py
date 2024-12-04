@@ -1,6 +1,6 @@
 
-
 from enum import IntFlag
+import os
 
 from lightning.pytorch import LightningModule
 from torch.utils.data import DataLoader
@@ -33,6 +33,9 @@ class PyConfigModule(LightningModule):
         self.val_dataloader   = DataLoadersFactory(self, Scope.EVAL,  config.subsets['val'])
         self.test_dataloader  = DataLoadersFactory(self, Scope.EVAL,  config.subsets['test'])
 
+        config = {k:v for k,v in config.items() if k not in ['operations']} # operations fails when using a profiler
+        self.save_hyperparameters(config)
+
     @property
     def metrics(self):
         return ['loss']
@@ -63,7 +66,7 @@ class DataLoadersFactory():
     def __init__(self, module, scope, subsets):
         self.module = module
         self.subsets = subsets
-        self.num_workers = self.module.config.get('num_workers', 0) # os.cpu_count()
+        self.num_workers = self.module.config.get('num_workers', (os.cpu_count() or 1) - 1)
         self.batch_size = self.module.config.get('batch_size') if scope == Scope.TRAIN else 1
         self.is_training = scope == Scope.TRAIN
     def __call__(self, sampler=None, batch_size=None, **kwargs):
