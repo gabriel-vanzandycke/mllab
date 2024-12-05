@@ -11,6 +11,8 @@ class Operation(nn.Module, abc.ABC):
     @abc.abstractmethod
     def forward(self, batch):
         raise NotImplementedError
+    def __repr__(self):
+        return self.__class__.__name__
 
 class Lambda(Operation):
     def __init__(self, l):
