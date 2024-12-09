@@ -12,10 +12,13 @@ from mllab.utils import TorchDataset
 from torch.profiler import record_function
 
 
+MAX_WORKERS = 8
+
 class Scope(IntFlag):
     TRAIN   = 1
-    EVAL    = 2
-    PREDICT = 4
+    VAL     = 2
+    TEST    = 4
+    PREDICT = 8
     ALL     = -1
 
 
@@ -26,12 +29,13 @@ class PyConfigModule(LightningModule):
         self.operations = nn.ModuleList(self.config.operations) # Modules should be initialized in LightningModule __init__
 
         self.training_step   = StepFunctionFactory(self, Scope.TRAIN, list(self.config.subsets['train'].keys()))
-        self.validation_step = StepFunctionFactory(self, Scope.EVAL,  list(self.config.subsets['val'].keys()))
-        self.testing_step    = StepFunctionFactory(self, Scope.EVAL,  list(self.config.subsets['test'].keys()))
+        self.validation_step = StepFunctionFactory(self, Scope.VAL,   list(self.config.subsets['val'].keys()))
+        self.test_step       = StepFunctionFactory(self, Scope.TEST,  list(self.config.subsets['test'].keys()))
 
-        self.train_dataloader = DataLoadersFactory(self, Scope.TRAIN, config.subsets['train'])
-        self.val_dataloader   = DataLoadersFactory(self, Scope.EVAL,  config.subsets['val'])
-        self.test_dataloader  = DataLoadersFactory(self, Scope.EVAL,  config.subsets['test'])
+        self.train_dataloader   = DataLoadersFactory(self, Scope.TRAIN, self.config.subsets['train'])
+        self.val_dataloader     = DataLoadersFactory(self, Scope.VAL,   self.config.subsets['val'])
+        self.test_dataloader    = DataLoadersFactory(self, Scope.TEST,  self.config.subsets['test'])
+        self.predict_dataloader = DataLoadersFactory(self, Scope.PREDICT,  self.config.subsets['test'])
 
         #config = {k:v for k,v in config.items() if k not in ['operations']} # operations fails when using a profiler
         self.save_hyperparameters(config)
@@ -56,8 +60,8 @@ class PyConfigModule(LightningModule):
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         return LazyBatch(batch, device=device)
 
-    # def on_load_checkpoint(self, checkpoint):
-    #     return super().on_load_checkpoint(checkpoint)
+    # def on_load_checkpoint(self, checkpoint): (called after __init__ on load_from_checkpoint)
+    #    return super().on_load_checkpoint(checkpoint)
     # def on_save_checkpoint(self, checkpoint):
     #     return super().on_save_checkpoint(checkpoint)
 
@@ -66,7 +70,7 @@ class DataLoadersFactory():
     def __init__(self, module, scope, subsets):
         self.module = module
         self.subsets = subsets
-        self.num_workers = self.module.config.get('num_workers', min((os.cpu_count() or 1) - 1, 8))
+        self.num_workers = self.module.config.get('num_workers', min((os.cpu_count() or 1) - 1, MAX_WORKERS))
         self.batch_size = self.module.config.get('batch_size') if scope == Scope.TRAIN else 1
         self.is_training = scope == Scope.TRAIN
     def __call__(self, sampler=None, batch_size=None, **kwargs):
@@ -101,7 +105,7 @@ class StepFunctionFactory:
 
 
 class LazyBatch(dict):
-    def __init__(self, batch, device):
+    def __init__(self, batch, device=None):
         super().__init__(batch)
         self.device = device
     def __getitem__(self, name):
